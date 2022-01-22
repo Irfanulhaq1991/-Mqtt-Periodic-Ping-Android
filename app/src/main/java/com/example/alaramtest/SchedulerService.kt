@@ -23,18 +23,18 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
 
-class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender,IMqttActionListener {
+class SchedulerService : Service(), MqttCallbackExtended, IMqttActionListener {
 
     private val userName = "2000"
     private val password = "oa4kgnrtse3pzdooi0kg"
     private val url = "tcp://192.168.0.197:1883"
     private val clientId = "Irfan Khan"
-  //  private val credential  = Triple(url,userName,password)
+    //  private val credential  = Triple(url,userName,password)
 
     private val lteUserName = "emqx"
     private val ltePassword = "12345"
     private val lteUrl = "tcp://10.150.127.114:1883"
-    private val credential  = Triple(lteUrl,lteUserName,ltePassword)
+    private val credential = Triple(lteUrl, lteUserName, ltePassword)
 
     private var count = 0
     private val notifId = 1101
@@ -137,7 +137,7 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender,IMqttAc
         mqttConnectOptions.connectionTimeout = 60
         mqttConnectOptions.isHttpsHostnameVerificationEnabled = false
         mqttConnectOptions.keepAliveInterval = timeInterval.toInt()
-        mqttClient.connect(mqttConnectOptions,this)
+        mqttClient.connect(mqttConnectOptions, this)
         showLog("Mqtt connection request sent")
     }
 
@@ -149,7 +149,7 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender,IMqttAc
             MqttAsyncClient(
                 credential.first,
                 clientId,
-                MqttDefaultFilePersistence(persistanceDir.absolutePath), this
+                MqttDefaultFilePersistence(persistanceDir.absolutePath)
             )
         mqttClient.setCallback(this)
         showLog("Mqtt is setup")
@@ -164,32 +164,27 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender,IMqttAc
     }
 
 
-    //Mqtt Message Callbacks
+    // mqtt setup end
 
-    lateinit var comms: ClientComms
-    override fun init(comms: ClientComms?) {
-        this.comms = comms!!
+
+    private fun schedule() {
+        showLog("Ping is schedule")
+
+        scheduledExecutorService.scheduleAtFixedRate(
+            { sendPing() },
+            0,
+            timeInterval,
+            TimeUnit.SECONDS
+        )
     }
 
-    override fun start() {
-        showLog("PingSender Started")
-        schedule(timeInterval)
-    }
-
-    override fun stop() {
-        showLog("PingSender stopped")
-    }
-
-    override fun schedule(delayInMilliseconds: Long) {
-        scheduledExecutorService.schedule({sendPing()},timeInterval,TimeUnit.SECONDS)
-    }
 
     private fun sendPing() {
         count += 1
         showLog("Ping is sent, Ping count: $count")
         if (!wakeLock.isHeld)
             wakeLock.acquire(timeInterval * 1000)
-        val token: MqttToken? = comms.checkForActivity(object : IMqttActionListener {
+        val token = mqttClient.checkPing(this, object : IMqttActionListener {
             override fun onSuccess(asyncActionToken: IMqttToken?) {
                 if (wakeLock.isHeld)
                     wakeLock.release()
@@ -204,14 +199,15 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender,IMqttAc
             }
 
         })
-        if(token == null && wakeLock.isHeld)
+        if (token == null && wakeLock.isHeld)
             wakeLock.release()
     }
-    // mqtt setup end
 
     //Mqtt Message Callbacks
     override fun connectComplete(b: Boolean, s: String) {
         showLog("connection to the host  is successful_______Token: $s")
+        if (scheduledExecutorService.isShutdown)
+            schedule()
     }
 
     override fun connectionLost(cause: Throwable?) {
@@ -220,7 +216,7 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender,IMqttAc
     }
 
     override fun messageArrived(topic: String?, message: MqttMessage?) {
-        showLog("A New message received ________ Message Content:${message.toString()} ")
+        showLog("A new message received ________ Message Content:${message.toString()} ")
     }
 
     override fun deliveryComplete(token: IMqttDeliveryToken?) {
