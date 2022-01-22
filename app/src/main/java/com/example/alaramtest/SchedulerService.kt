@@ -15,6 +15,7 @@ import org.eclipse.paho.client.mqttv3.IMqttActionListener
 import org.eclipse.paho.client.mqttv3.MqttAsyncClient
 import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
 import org.eclipse.paho.client.mqttv3.*
+import org.eclipse.paho.client.mqttv3.internal.ClientComms
 import org.eclipse.paho.client.mqttv3.persist.MqttDefaultFilePersistence
 import java.io.File
 import java.util.concurrent.Executors
@@ -22,7 +23,7 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
 
-class SchedulerService : Service(), MqttCallbackExtended, IMqttActionListener {
+class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender,IMqttActionListener {
 
     private val userName = "2000"
     private val password = "oa4kgnrtse3pzdooi0kg"
@@ -148,7 +149,7 @@ class SchedulerService : Service(), MqttCallbackExtended, IMqttActionListener {
             MqttAsyncClient(
                 credential.first,
                 clientId,
-                MqttDefaultFilePersistence(persistanceDir.absolutePath)
+                MqttDefaultFilePersistence(persistanceDir.absolutePath), this
             )
         mqttClient.setCallback(this)
         showLog("Mqtt is setup")
@@ -162,15 +163,25 @@ class SchedulerService : Service(), MqttCallbackExtended, IMqttActionListener {
         return myDir
     }
 
-    private fun schedule() {
-        showLog("Ping is schedule")
 
-        scheduledExecutorService.scheduleAtFixedRate(
-            { sendPing() },
-            0,
-            timeInterval,
-            TimeUnit.SECONDS
-        )
+    //Mqtt Message Callbacks
+
+    lateinit var comms: ClientComms
+    override fun init(comms: ClientComms?) {
+        this.comms = comms!!
+    }
+
+    override fun start() {
+        showLog("PingSender Started")
+        schedule(timeInterval)
+    }
+
+    override fun stop() {
+        showLog("PingSender stopped")
+    }
+
+    override fun schedule(delayInMilliseconds: Long) {
+        scheduledExecutorService.schedule({sendPing()},timeInterval,TimeUnit.SECONDS)
     }
 
     private fun sendPing() {
@@ -178,7 +189,7 @@ class SchedulerService : Service(), MqttCallbackExtended, IMqttActionListener {
         showLog("Ping is sent, Ping count: $count")
         if (!wakeLock.isHeld)
             wakeLock.acquire(timeInterval * 1000)
-        mqttClient.checkPing(this, object : IMqttActionListener {
+        val token: MqttToken? = comms.checkForActivity(object : IMqttActionListener {
             override fun onSuccess(asyncActionToken: IMqttToken?) {
                 if (wakeLock.isHeld)
                     wakeLock.release()
@@ -193,16 +204,14 @@ class SchedulerService : Service(), MqttCallbackExtended, IMqttActionListener {
             }
 
         })
-
+        if(token == null && wakeLock.isHeld)
+            wakeLock.release()
     }
     // mqtt setup end
-
 
     //Mqtt Message Callbacks
     override fun connectComplete(b: Boolean, s: String) {
         showLog("connection to the host  is successful_______Token: $s")
-        (scheduledExecutorService.isShutdown)
-        schedule()
     }
 
     override fun connectionLost(cause: Throwable?) {
@@ -227,7 +236,5 @@ class SchedulerService : Service(), MqttCallbackExtended, IMqttActionListener {
         showLog("connection is failed_______Token: $asyncActionToken")
         exception?.printStackTrace()
     }
-
-
 }
 
