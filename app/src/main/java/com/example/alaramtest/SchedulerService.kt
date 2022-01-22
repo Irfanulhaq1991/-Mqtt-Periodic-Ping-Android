@@ -23,18 +23,18 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
 
-class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender,IMqttActionListener {
+class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender, IMqttActionListener {
 
     private val userName = "2000"
     private val password = "oa4kgnrtse3pzdooi0kg"
     private val url = "tcp://192.168.0.197:1883"
     private val clientId = "Irfan Khan"
-  //  private val credential  = Triple(url,userName,password)
+    private val credential = Triple(url, userName, password)
 
     private val lteUserName = "emqx"
     private val ltePassword = "12345"
     private val lteUrl = "tcp://10.150.127.114:1883"
-    private val credential  = Triple(lteUrl,lteUserName,ltePassword)
+    //private val credential  = Triple(lteUrl,lteUserName,ltePassword)
 
     private var count = 0
     private val notifId = 1101
@@ -137,7 +137,7 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender,IMqttAc
         mqttConnectOptions.connectionTimeout = 60
         mqttConnectOptions.isHttpsHostnameVerificationEnabled = false
         mqttConnectOptions.keepAliveInterval = timeInterval.toInt()
-        mqttClient.connect(mqttConnectOptions,this)
+        mqttClient.connect(mqttConnectOptions,this, this)
         showLog("Mqtt connection request sent")
     }
 
@@ -181,7 +181,7 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender,IMqttAc
     }
 
     override fun schedule(delayInMilliseconds: Long) {
-        scheduledExecutorService.schedule({sendPing()},timeInterval,TimeUnit.SECONDS)
+        scheduledExecutorService.schedule({ sendPing() }, timeInterval, TimeUnit.SECONDS)
     }
 
     private fun sendPing() {
@@ -204,7 +204,7 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender,IMqttAc
             }
 
         })
-        if(token == null && wakeLock.isHeld)
+        if (token == null && wakeLock.isHeld)
             wakeLock.release()
     }
     // mqtt setup end
@@ -214,6 +214,7 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender,IMqttAc
     override fun messageArrived(topic: String?, message: MqttMessage?) {
         showLog("A New message received ________ Message Content:${message.toString()} ")
     }
+
     override fun deliveryComplete(token: IMqttDeliveryToken?) {
         showLog("Message is delivered successfully")
     }
@@ -227,10 +228,12 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender,IMqttAc
         showLog("connection is failed_______Token: $asyncActionToken")
         exception?.printStackTrace()
     }
+
     override fun connectionLost(cause: Throwable?) {
         showLog("connection to the host is lost")
         cause?.printStackTrace()
     }
+
     override fun connectComplete(b: Boolean, s: String) {
         showLog("connection to the host  is successful_______Token: $s")
     }
