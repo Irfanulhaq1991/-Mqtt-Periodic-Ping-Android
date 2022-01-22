@@ -230,6 +230,7 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender, IMqttA
     }
 
     override fun connectionLost(cause: Throwable?) {
+        count = 0
         showLog("connection to the host is lost")
         cause?.printStackTrace()
     }
