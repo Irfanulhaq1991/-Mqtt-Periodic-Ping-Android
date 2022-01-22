@@ -23,6 +23,14 @@ class SchedulerService : Service(), MqttCallbackExtended {
 
     private val userName = "2000"
     private val password = "oa4kgnrtse3pzdooi0kg"
+    private val url = "tcp://192.168.0.197:1883"
+    private val clientId = "Irfan Khan"
+
+    private val lteUserName = "emqx"
+    private val ltePassword = "12345"
+    private val lteUrl = "tcp://kafur.hiak.lte:1883"
+
+
     private var count = 0
     private val notifId = 1101
     private val timeInterval = 30L
@@ -131,10 +139,10 @@ class SchedulerService : Service(), MqttCallbackExtended {
     private fun setupMqtt() {
         val persistanceDir = getDirForMqtt()
             ?: throw NullPointerException("No Persistence Directory Available for Mqtt ")
-        val (url, clientId) = Pair("tcp://192.168.0.197:1883", "IrfanKhan")
+
         mqttClient =
             MqttAsyncClient(
-                url,
+                lteUrl,
                 clientId,
                 MqttDefaultFilePersistence(persistanceDir.absolutePath)
             )
