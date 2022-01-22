@@ -18,12 +18,14 @@ import org.eclipse.paho.client.mqttv3.*
 import org.eclipse.paho.client.mqttv3.internal.ClientComms
 import org.eclipse.paho.client.mqttv3.persist.MqttDefaultFilePersistence
 import java.io.File
+import java.lang.IllegalStateException
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
 
-class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender, IMqttActionListener {
+class SchedulerService : Service(), ServiceDataBridge, MqttCallbackExtended, MqttPingSender,
+    IMqttActionListener {
 
     private val userName = "2000"
     private val password = "oa4kgnrtse3pzdooi0kg"
@@ -58,8 +60,27 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender, IMqttA
     }
 
 
-    // variable ends
+    // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>variable ends<<<<<<<<<<<<<<<<<<<
+    companion object {
+        private var instance: SchedulerService? = null
+        fun getServiceDataBridge(): ServiceDataBridge {
+            if (instance == null) throw Exception("ServiceDataBridge is null: Service not started yet")
+            return instance!!
+        }
 
+        private fun initDataBridge(){
+            if(instance != null) throw IllegalStateException("ServiceDataBridge is not null: Service is already started")
+           instance = SchedulerService()
+        }
+
+        private fun destroyDataBridge(){
+            instance = null
+        }
+    }
+
+    override fun onData(data: Any) {
+        showLog("Data Passed: $data")
+    }
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -73,6 +94,7 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender, IMqttA
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        initDataBridge()
         connectToMqtt()
         return START_STICKY
     }
@@ -83,6 +105,7 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender, IMqttA
             mqttClient.disconnect()
         if (!scheduledExecutorService.isShutdown)
             scheduledExecutorService.shutdownNow()
+        destroyDataBridge()
     }
 
     // helpers
@@ -137,7 +160,7 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender, IMqttA
         mqttConnectOptions.connectionTimeout = 60
         mqttConnectOptions.isHttpsHostnameVerificationEnabled = false
         mqttConnectOptions.keepAliveInterval = timeInterval.toInt()
-        mqttClient.connect(mqttConnectOptions,this, this)
+        mqttClient.connect(mqttConnectOptions, this, this)
         showLog("Mqtt connection request sent")
     }
 
@@ -238,5 +261,11 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender, IMqttA
     override fun connectComplete(b: Boolean, s: String) {
         showLog("connection to the host  is successful_______Token: $s")
     }
+
+
+}
+
+interface ServiceDataBridge {
+    fun onData(data: Any)
 }
 

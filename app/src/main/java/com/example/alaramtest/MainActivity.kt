@@ -20,9 +20,7 @@ class MainActivity : AppCompatActivity() {
                 startService()
         }
         btnStopService.setOnClickListener {
-
-                stopService()
-
+            stopService()
         }
 
     }
