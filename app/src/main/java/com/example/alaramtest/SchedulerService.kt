@@ -11,6 +11,9 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import org.eclipse.paho.client.mqttv3.IMqttActionListener
+import org.eclipse.paho.client.mqttv3.MqttAsyncClient
+import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
 import org.eclipse.paho.client.mqttv3.*
 import org.eclipse.paho.client.mqttv3.persist.MqttDefaultFilePersistence
 import java.io.File
@@ -19,17 +22,18 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
 
-class SchedulerService : Service(), MqttCallbackExtended {
+class SchedulerService : Service(), MqttCallbackExtended, IMqttActionListener {
 
     private val userName = "2000"
     private val password = "oa4kgnrtse3pzdooi0kg"
     private val url = "tcp://192.168.0.197:1883"
     private val clientId = "Irfan Khan"
+  //  private val credential  = Triple(url,userName,password)
 
     private val lteUserName = "emqx"
     private val ltePassword = "12345"
-    private val lteUrl = "tcp://kafur.hiak.lte:1883"
-
+    private val lteUrl = "tcp://10.150.127.114:1883"
+    private val credential  = Triple(lteUrl,lteUserName,ltePassword)
 
     private var count = 0
     private val notifId = 1101
@@ -49,7 +53,7 @@ class SchedulerService : Service(), MqttCallbackExtended {
 
     private val wakeLock: PowerManager.WakeLock by lazy {
         val pm = getSystemService(POWER_SERVICE) as PowerManager
-        pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LocationManagerService")
+        pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "testAPP:LocationManagerService")
     }
 
 
@@ -126,13 +130,13 @@ class SchedulerService : Service(), MqttCallbackExtended {
 
     private fun connectToMqtt() {
         val mqttConnectOptions = MqttConnectOptions()
-        mqttConnectOptions.userName = userName
-        mqttConnectOptions.password = (password).toCharArray()
+        mqttConnectOptions.userName = credential.second
+        mqttConnectOptions.password = (credential.third).toCharArray()
         mqttConnectOptions.isAutomaticReconnect = true
         mqttConnectOptions.connectionTimeout = 60
         mqttConnectOptions.isHttpsHostnameVerificationEnabled = false
         mqttConnectOptions.keepAliveInterval = timeInterval.toInt()
-        mqttClient.connect(mqttConnectOptions)
+        mqttClient.connect(mqttConnectOptions,this)
         showLog("Mqtt connection request sent")
     }
 
@@ -142,7 +146,7 @@ class SchedulerService : Service(), MqttCallbackExtended {
 
         mqttClient =
             MqttAsyncClient(
-                lteUrl,
+                credential.first,
                 clientId,
                 MqttDefaultFilePersistence(persistanceDir.absolutePath)
             )
@@ -214,15 +218,15 @@ class SchedulerService : Service(), MqttCallbackExtended {
         showLog("Message is delivered successfully")
     }
 
-    // Mqtt Connection callback
-//    override fun onSuccess(asyncActionToken: IMqttToken?) {
-//        showLog("ping is sent successfully_______Token: $asyncActionToken")
-//    }
-//
-//    override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
-//        showLog("ping is not sent successfully_______Token: $asyncActionToken")
-//        exception?.printStackTrace()
-//    }
+
+    override fun onSuccess(asyncActionToken: IMqttToken?) {
+        showLog("connected successfully_______Token: $asyncActionToken")
+    }
+
+    override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+        showLog("connection is failed_______Token: $asyncActionToken")
+        exception?.printStackTrace()
+    }
 
 
 }
