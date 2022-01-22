@@ -210,24 +210,15 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender,IMqttAc
     // mqtt setup end
 
     //Mqtt Message Callbacks
-    override fun connectComplete(b: Boolean, s: String) {
-        showLog("connection to the host  is successful_______Token: $s")
-    }
-
-    override fun connectionLost(cause: Throwable?) {
-        showLog("connection to the host is lost")
-        cause?.printStackTrace()
-    }
-
+    // message callbacks
     override fun messageArrived(topic: String?, message: MqttMessage?) {
         showLog("A New message received ________ Message Content:${message.toString()} ")
     }
-
     override fun deliveryComplete(token: IMqttDeliveryToken?) {
         showLog("Message is delivered successfully")
     }
 
-
+    // connection callbacks
     override fun onSuccess(asyncActionToken: IMqttToken?) {
         showLog("connected successfully_______Token: $asyncActionToken")
     }
@@ -235,6 +226,13 @@ class SchedulerService : Service(), MqttCallbackExtended, MqttPingSender,IMqttAc
     override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
         showLog("connection is failed_______Token: $asyncActionToken")
         exception?.printStackTrace()
+    }
+    override fun connectionLost(cause: Throwable?) {
+        showLog("connection to the host is lost")
+        cause?.printStackTrace()
+    }
+    override fun connectComplete(b: Boolean, s: String) {
+        showLog("connection to the host  is successful_______Token: $s")
     }
 }
 
