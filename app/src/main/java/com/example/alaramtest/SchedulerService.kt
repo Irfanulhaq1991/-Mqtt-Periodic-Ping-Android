@@ -6,9 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.os.Build
-import android.os.IBinder
-import android.os.PowerManager
+import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import org.eclipse.paho.client.mqttv3.IMqttActionListener
@@ -41,46 +39,67 @@ class SchedulerService : Service(), ServiceDataBridge, MqttCallbackExtended, Mqt
     private var count = 0
     private val notifId = 1101
     private val timeInterval = 30L
+    private val tcpTimout = 60
     private val channelId = "service_channel"
     private lateinit var mqttClient: MqttAsyncClient
 
     private val TAG = "MqttConnection"
 
     private val scheduledExecutorService: ScheduledExecutorService by lazy {
-        Executors.newScheduledThreadPool(5);
+        Executors.newScheduledThreadPool(4)
     }
 
+    private val subscribers = mutableListOf<ServiceEventListener>()
     private val notificationManager: NotificationManager by lazy {
         getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
 
     private val wakeLock: PowerManager.WakeLock by lazy {
         val pm = getSystemService(POWER_SERVICE) as PowerManager
-        pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "testAPP:LocationManagerService")
+        pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MyApp::LocationManagerService")
     }
 
 
     // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>variable ends<<<<<<<<<<<<<<<<<<<
+
+
+    /// data communication
     companion object {
         private var instance: SchedulerService? = null
+
+        //exposed for incomming data communication
         fun getServiceDataBridge(): ServiceDataBridge {
             if (instance == null) throw Exception("ServiceDataBridge is null: Service not started yet")
             return instance!!
         }
 
-        private fun initDataBridge(){
-            if(instance != null) throw IllegalStateException("ServiceDataBridge is not null: Service is already started")
-           instance = SchedulerService()
+        private fun initDataBridge() {
+            //  if (instance != null) throw IllegalStateException("ServiceDataBridge is not null: Service is already started")
+            instance = SchedulerService()
         }
 
-        private fun destroyDataBridge(){
+        private fun destroyDataBridge() {
             instance = null
         }
     }
 
+
     override fun onData(data: Any) {
         showLog("Data Passed: $data")
     }
+
+    override fun subscribeForEvents(subscriber: ServiceEventListener) {
+        if (!subscribers.contains(subscriber))
+            subscribers.add(subscriber)
+    }
+
+    override fun unSubscribeForEvents(subscriber: ServiceEventListener) {
+        if (subscribers.contains(subscriber))
+            subscribers.remove(subscriber)
+    }
+
+    //data communication ends
+
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
@@ -157,7 +176,7 @@ class SchedulerService : Service(), ServiceDataBridge, MqttCallbackExtended, Mqt
         mqttConnectOptions.userName = credential.second
         mqttConnectOptions.password = (credential.third).toCharArray()
         mqttConnectOptions.isAutomaticReconnect = true
-        mqttConnectOptions.connectionTimeout = 60
+        mqttConnectOptions.connectionTimeout = tcpTimout
         mqttConnectOptions.isHttpsHostnameVerificationEnabled = false
         mqttConnectOptions.keepAliveInterval = timeInterval.toInt()
         mqttClient.connect(mqttConnectOptions, this, this)
@@ -200,6 +219,7 @@ class SchedulerService : Service(), ServiceDataBridge, MqttCallbackExtended, Mqt
     }
 
     override fun stop() {
+
         showLog("PingSender stopped")
     }
 
@@ -207,11 +227,13 @@ class SchedulerService : Service(), ServiceDataBridge, MqttCallbackExtended, Mqt
         scheduledExecutorService.schedule({ sendPing() }, timeInterval, TimeUnit.SECONDS)
     }
 
+
     private fun sendPing() {
         count += 1
         showLog("Ping is sent, Ping count: $count")
         if (!wakeLock.isHeld)
             wakeLock.acquire(timeInterval * 1000)
+
         val token: MqttToken? = comms.checkForActivity(object : IMqttActionListener {
             override fun onSuccess(asyncActionToken: IMqttToken?) {
                 if (wakeLock.isHeld)
@@ -222,6 +244,7 @@ class SchedulerService : Service(), ServiceDataBridge, MqttCallbackExtended, Mqt
             override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
                 if (wakeLock.isHeld)
                     wakeLock.release()
+
                 showLog("ping is not sent successfully_______Token: $asyncActionToken")
                 exception?.printStackTrace()
             }
@@ -244,6 +267,7 @@ class SchedulerService : Service(), ServiceDataBridge, MqttCallbackExtended, Mqt
 
     // connection callbacks
     override fun onSuccess(asyncActionToken: IMqttToken?) {
+
         showLog("connected successfully_______Token: $asyncActionToken")
     }
 
@@ -267,5 +291,10 @@ class SchedulerService : Service(), ServiceDataBridge, MqttCallbackExtended, Mqt
 
 interface ServiceDataBridge {
     fun onData(data: Any)
+    fun subscribeForEvents(subscriber: ServiceEventListener)
+    fun unSubscribeForEvents(subscriber: ServiceEventListener)
 }
 
+interface ServiceEventListener {
+    fun onEvent(data: Any)
+}
