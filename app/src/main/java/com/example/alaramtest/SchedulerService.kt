@@ -1,11 +1,10 @@
 package com.example.alaramtest
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.Service
+import android.app.*
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -13,20 +12,17 @@ import org.eclipse.paho.client.mqttv3.IMqttActionListener
 import org.eclipse.paho.client.mqttv3.MqttAsyncClient
 import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
 import org.eclipse.paho.client.mqttv3.*
-import org.eclipse.paho.client.mqttv3.internal.ClientComms
 import org.eclipse.paho.client.mqttv3.persist.MqttDefaultFilePersistence
 import java.io.File
-import java.lang.IllegalStateException
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.TimeUnit
 
 
-class SchedulerService : Service(), ServiceDataBridge, MqttCallbackExtended, MqttPingSender,
+class SchedulerService : Service(), ServiceDataBridge, MqttCallbackExtended,
     IMqttActionListener {
 
     private val userName = "2000"
-    private val password = "oa4kgnrtse3pzdooi0kg"
+    private val password = "fppr5wqh7bx8n2wop2o2"
     private val url = "tcp://192.168.0.197:1883"
     private val clientId = "Irfan Khan"
     private val credential = Triple(url, userName, password)
@@ -45,18 +41,10 @@ class SchedulerService : Service(), ServiceDataBridge, MqttCallbackExtended, Mqt
 
     private val TAG = "MqttConnection"
 
-    private val scheduledExecutorService: ScheduledExecutorService by lazy {
-        Executors.newScheduledThreadPool(4)
-    }
 
     private val subscribers = mutableListOf<ServiceEventListener>()
     private val notificationManager: NotificationManager by lazy {
         getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    }
-
-    private val wakeLock: PowerManager.WakeLock by lazy {
-        val pm = getSystemService(POWER_SERVICE) as PowerManager
-        pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MyApp::LocationManagerService")
     }
 
 
@@ -122,9 +110,10 @@ class SchedulerService : Service(), ServiceDataBridge, MqttCallbackExtended, Mqt
         super.onDestroy()
         if (mqttClient.isConnected)
             mqttClient.disconnect()
-        if (!scheduledExecutorService.isShutdown)
-            scheduledExecutorService.shutdownNow()
+
         destroyDataBridge()
+        if (isRegister)
+            stopScheduling()
     }
 
     // helpers
@@ -191,7 +180,7 @@ class SchedulerService : Service(), ServiceDataBridge, MqttCallbackExtended, Mqt
             MqttAsyncClient(
                 credential.first,
                 clientId,
-                MqttDefaultFilePersistence(persistanceDir.absolutePath), this
+                MqttDefaultFilePersistence(persistanceDir.absolutePath)
             )
         mqttClient.setCallback(this)
         showLog("Mqtt is setup")
@@ -206,54 +195,8 @@ class SchedulerService : Service(), ServiceDataBridge, MqttCallbackExtended, Mqt
     }
 
 
-    //Mqtt Message Callbacks
-
-    lateinit var comms: ClientComms
-    override fun init(comms: ClientComms?) {
-        this.comms = comms!!
-    }
-
-    override fun start() {
-        showLog("PingSender Started")
-        schedule(timeInterval)
-    }
-
-    override fun stop() {
-
-        showLog("PingSender stopped")
-    }
-
-    override fun schedule(delayInMilliseconds: Long) {
-        scheduledExecutorService.schedule({ sendPing() }, timeInterval, TimeUnit.SECONDS)
-    }
-
-
-    private fun sendPing() {
-        count += 1
-        showLog("Ping is sent, Ping count: $count")
-        if (!wakeLock.isHeld)
-            wakeLock.acquire(timeInterval * 1000)
-
-        val token: MqttToken? = comms.checkForActivity(object : IMqttActionListener {
-            override fun onSuccess(asyncActionToken: IMqttToken?) {
-                if (wakeLock.isHeld)
-                    wakeLock.release()
-                showLog("ping is sent successfully_______Token: $asyncActionToken")
-            }
-
-            override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
-                if (wakeLock.isHeld)
-                    wakeLock.release()
-
-                showLog("ping is not sent successfully_______Token: $asyncActionToken")
-                exception?.printStackTrace()
-            }
-
-        })
-        if (token == null && wakeLock.isHeld)
-            wakeLock.release()
-    }
     // mqtt setup end
+
 
     //Mqtt Message Callbacks
     // message callbacks
@@ -267,25 +210,76 @@ class SchedulerService : Service(), ServiceDataBridge, MqttCallbackExtended, Mqt
 
     // connection callbacks
     override fun onSuccess(asyncActionToken: IMqttToken?) {
-
+        if (!isRegister)
+            startScheduling()
         showLog("connected successfully_______Token: $asyncActionToken")
     }
 
     override fun onFailure(asyncActionToken: IMqttToken?, exception: Throwable?) {
+        if (isRegister)
+            stopScheduling()
         showLog("connection is failed_______Token: $asyncActionToken")
         exception?.printStackTrace()
     }
 
     override fun connectionLost(cause: Throwable?) {
+        if (isRegister)
+            stopScheduling()
         count = 0
         showLog("connection to the host is lost")
         cause?.printStackTrace()
     }
 
     override fun connectComplete(b: Boolean, s: String) {
+        if (isRegister)
+            schedule()
         showLog("connection to the host  is successful_______Token: $s")
     }
 
+
+    //Ping Scheduler
+    private var isRegister = false
+    private val pingTopic = "cmd/$userName"
+    private val receiver = Receiver()
+
+    private val mgr: AlarmManager by lazy { getSystemService(ALARM_SERVICE) as AlarmManager }
+    val operation: PendingIntent by lazy { PendingIntent.getBroadcast(this, 0, Intent("Hello"), 0) }
+
+    fun stopScheduling() {
+        isRegister = false
+        unregisterReceiver(receiver)
+        mgr.cancel(operation)
+        if (mqttClient.isConnected)
+            mqttClient.unsubscribe(pingTopic)
+    }
+
+
+    fun startScheduling() {
+        isRegister = true
+        registerReceiver(receiver, IntentFilter("Hello"))
+        mqttClient.subscribe(pingTopic, 0)
+        schedule()
+    }
+
+
+    fun schedule() {
+        val info =
+            AlarmManager.AlarmClockInfo(System.currentTimeMillis() + 5 * 1000, operation)
+        mgr.setAlarmClock(info, operation)
+    }
+
+    private fun sendPing() {
+        val mqttMessage = MqttMessage()
+        mqttMessage.payload = "".toByteArray()
+        mqttClient.publish(pingTopic, mqttMessage, 0, null)
+    }
+
+    inner class Receiver : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            sendPing()
+            schedule()
+        }
+    }
 
 }
 
